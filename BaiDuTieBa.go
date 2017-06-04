@@ -191,7 +191,7 @@ func main() {
             //签到失败
         }
     }
-    //记录日志
+    // TODO: 记录日志
 }
 
 //读取加载配置文件
@@ -238,7 +238,12 @@ func getTime() time.Time {
 
 //等待时间
 func waitTime(done chan int) {
-    // TODO: 等待0点
+    t := getTime()
+    if t.Hour() == 23 && t.Minute() > 55 {
+        tomorrow := t.AddDate(0, 0, 1)
+        tomorrow = time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 0, 0, 0, 0, t.Location())
+        time.Sleep(tomorrow.Sub(t))
+    }
     done <- 0
 }
 
