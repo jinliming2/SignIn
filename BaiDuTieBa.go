@@ -20,54 +20,62 @@ type Config struct {
     BAIDUID string
     BDUSS   string
     STOKEN  string
-    maxTry  int
-    thread  int
+    MaxTry  int
+    Thread  int
+}
+
+//日志文件格式
+type LogData struct {
+    Success uint
+    Fail    uint
+    During  string
+    Data    []BarInfo
 }
 
 //贴吧信息
 type BarInfo struct {
-    task   []string
-    done   bool
-    info   string
-    tried  int
-    result SignResult
+    Task   []string
+    Done   bool
+    Info   string
+    Tried  int
+    Result SignResult
 }
 
 //签到结果格式
 type SignResult struct {
-    ctime       int
-    error       SignError
-    error_code  string
-    error_msg   string
-    logid       int
-    server_time string
-    time        int
-    user_info   SignUserInfo
+    Ctime       int
+    Error       SignError
+    Error_code  string
+    Error_msg   string
+    Logid       int
+    Server_time string
+    Time        int
+    User_info   SignUserInfo
 }
 
 //签到错误信息格式
 type SignError struct {
-    errmsg  string
-    errno   string
-    usermsg string
+    Errmsg  string
+    Errno   string
+    Usermsg string
 }
 
 //签到结果详情格式
 type SignUserInfo struct {
-    cont_sign_num       string //连续签到
-    cout_total_sing_num string //累计签到
-    hun_sign_num        string
-    is_org_name         string
-    is_sign_in          string //是否签到成功
-    level_name          string //等级称号
-    levelup_score       string //升级需要经验
-    miss_sign_num       string //漏签天数
-    sign_bonus_point    string
-    sign_time           string //签到时间
-    total_resign_num    string
-    total_sign_num      string
-    user_id             string
-    user_sign_rank      string //签到排名
+    Cont_sign_num       string //连续签到
+    Cout_total_sing_num string //累计签到
+    Hun_sign_num        string
+    Is_org_name         string
+    Is_sign_in          string //是否签到成功
+    Level_name          string //等级称号
+    Levelup_score       string //升级需要经验
+    Miss_sign_num       string //漏签天数
+    Sign_bonus_point    string
+    Sign_time           string //签到时间
+    Total_resign_num    string
+    Total_sign_num      string
+    User_id             string
+    User_sign_rank      string //签到排名
 }
 
 //错误代码
@@ -83,6 +91,9 @@ const (
     ERROR_SIGN_REQUEST_FAIL
     ERROR_LOAD_SIGN_RESULT_FAIL
     ERROR_PARSE_SIGN_RESULT_FAIL
+    ERROR_CREATE_LOG_DIR_FAIL
+    ERROR_CREATE_LOG_FAIL
+    ERROR_WRITE_LOG_FAIL
 )
 
 //浏览器
@@ -138,7 +149,7 @@ func main() {
     //任务队列、结果队列和线程池
     queue := make(chan *BarInfo)
     done := make(chan *BarInfo)
-    threadPool := make(chan int, config.thread)
+    threadPool := make(chan int, config.Thread)
     defer close(queue)
     defer close(done)
     defer close(threadPool)
@@ -149,24 +160,26 @@ func main() {
     <-_time
     close(_time)
 
+    during := time.Now()
+
     //多线程处理任务
     go func() {
         for {
             task := <-queue
             threadPool <- 0
             go func() {
-                if !task.done {
-                    task.tried++
-                    signed, fid, tbs := getInfo(task.task[1])
+                if !task.Done {
+                    task.Tried++
+                    signed, fid, tbs := getInfo(task.Task[1])
                     if signed == "已签到" {
-                        task.done = true
-                        task.info = "已签到"
+                        task.Done = true
+                        task.Info = "已签到"
                     } else if fid == "" || tbs == "" {
-                        task.info = "fid或者tbs未知"
+                        task.Info = "fid或者tbs未知"
                     } else {
-                        task.result = signRequest(task.task[2], fid, tbs)
-                        if task.result.error_code == "0" && task.result.user_info.is_sign_in == "1" {
-                            task.done = true
+                        task.Result = signRequest(task.Task[2], fid, tbs)
+                        if task.Result.Error_code == "0" && task.Result.User_info.Is_sign_in == "1" {
+                            task.Done = true
                         }
                     }
                 }
@@ -179,19 +192,40 @@ func main() {
     for i := range like_list {
         queue <- &like_list[i]
     }
+    var log LogData
     //等待结果
     for i := 0; i < len(like_list); i++ {
         task := <-done
-        if task.done {
-            //签到成功
-        } else if task.tried < config.maxTry {
+        if task.Done {
+            log.Success++
+        } else if task.Tried < config.MaxTry {
             i--
-            queue <- task  //重新入队
+            queue <- task //重新入队
         } else {
-            //签到失败
+            log.Fail++
         }
     }
-    // TODO: 记录日志
+
+    //仅记录一个月的日志
+    log.Data = append(log.Data, like_list...)
+    log.During = time.Now().Sub(during).String()
+    err := os.MkdirAll("./log", 0x755)
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Create Log Dir Error: %v\n", err)
+        os.Exit(ERROR_CREATE_LOG_DIR_FAIL)
+    }
+    file, err := os.Create(fmt.Sprintf("./log/%v.json", time.Now().Day()))
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Create Log File Error: %v\n", err)
+        os.Exit(ERROR_CREATE_LOG_FAIL)
+    }
+    defer file.Close()
+
+    err = json.NewEncoder(file).Encode(&log)
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Write Log File Error: %v\n", err)
+        os.Exit(ERROR_WRITE_LOG_FAIL)
+    }
 }
 
 //读取加载配置文件
@@ -273,7 +307,7 @@ func fetchLikeList() []BarInfo {
             break
         }
         for i := range like {
-            likes = append(likes, BarInfo{task: like[i], done: false, tried: 0})
+            likes = append(likes, BarInfo{Task: like[i], Done: false, Tried: 0})
         }
         page++
     }

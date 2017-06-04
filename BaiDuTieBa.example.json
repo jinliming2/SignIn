@@ -2,6 +2,6 @@
   "BAIDUID": "",
   "BDUSS": "",
   "STOKEN": "",
-  "maxTry": 10,
-  "thread": 100
+  "MaxTry": 10,
+  "Thread": 100
 }
