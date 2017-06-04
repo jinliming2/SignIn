@@ -20,6 +20,17 @@ type Config struct {
     BAIDUID string
     BDUSS   string
     STOKEN  string
+    maxTry  int
+    thread  int
+}
+
+//贴吧信息
+type BarInfo struct {
+    task   []string
+    done   bool
+    info   string
+    tried  int
+    result SignResult
 }
 
 //签到结果格式
@@ -124,11 +135,13 @@ func main() {
     //加载贴吧列表
     like_list := fetchLikeList()
 
-    //任务队列和结果队列
-    queue := make(chan []string)
-    done := make(chan SignResult)
+    //任务队列、结果队列和线程池
+    queue := make(chan *BarInfo)
+    done := make(chan *BarInfo)
+    threadPool := make(chan int, config.thread)
     defer close(queue)
     defer close(done)
+    defer close(threadPool)
 
     //等待时间
     _time := make(chan int)
@@ -140,25 +153,45 @@ func main() {
     go func() {
         for {
             task := <-queue
+            threadPool <- 0
             go func() {
-                _, fid, tbs := getInfo(task[1])
-                done <- signRequest(task[2], fid, tbs)
+                if !task.done {
+                    task.tried++
+                    signed, fid, tbs := getInfo(task.task[1])
+                    if signed == "已签到" {
+                        task.done = true
+                        task.info = "已签到"
+                    } else if fid == "" || tbs == "" {
+                        task.info = "fid或者tbs未知"
+                    } else {
+                        task.result = signRequest(task.task[2], fid, tbs)
+                        if task.result.error_code == "0" && task.result.user_info.is_sign_in == "1" {
+                            task.done = true
+                        }
+                    }
+                }
+                done <- task
+                <-threadPool
             }()
         }
     }()
     //导入任务队列
     for i := range like_list {
-        queue <- like_list[i]
+        queue <- &like_list[i]
     }
     //等待结果
     for i := 0; i < len(like_list); i++ {
-        result := <-done
-        if result.error_code == "0" {
-            if result.user_info.is_sign_in == "1" {
-                //签到成功
-            }
+        task := <-done
+        if task.done {
+            //签到成功
+        } else if task.tried < config.maxTry {
+            i--
+            queue <- task  //重新入队
+        } else {
+            //签到失败
         }
     }
+    //记录日志
 }
 
 //读取加载配置文件
@@ -210,10 +243,10 @@ func waitTime(done chan int) {
 }
 
 //加载“喜欢的吧”列表
-func fetchLikeList() [][]string {
+func fetchLikeList() []BarInfo {
     host := "http://tieba.baidu.com/f/like/mylike?&pn=%d"
     page := 1
-    likes := [][]string{}
+    var likes []BarInfo
     for {
         res, err := browser.Get(fmt.Sprintf(host, page))
         if err != nil {
@@ -234,7 +267,9 @@ func fetchLikeList() [][]string {
         if len(like) == 0 {
             break
         }
-        likes = append(likes, like...)
+        for i := range like {
+            likes = append(likes, BarInfo{task: like[i], done: false, tried: 0})
+        }
         page++
     }
     return likes

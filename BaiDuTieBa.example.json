@@ -1,5 +1,7 @@
 {
   "BAIDUID": "",
   "BDUSS": "",
-  "STOKEN": ""
+  "STOKEN": "",
+  "maxTry": 10,
+  "thread": 100
 }
