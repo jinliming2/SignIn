@@ -16,6 +16,9 @@
 # Gogland IDEA
 .idea/
 
+# log
+log/
+
 # Config
 *.json
 !*.example.json

@@ -104,7 +104,7 @@ var config = loadConfig()
 //GBK编码转换器
 var gbk = simplifiedchinese.GBK.NewDecoder()
 //正则
-var likedBar, barInfoSigned, barInfoFid, barInfoTbs *regexp.Regexp
+var likedBar, barInfoSigned, barInfoFid, barInfoTbs, barInfoFid2, barInfoTbs2 *regexp.Regexp
 
 //初始化
 func init() {
@@ -125,6 +125,16 @@ func init() {
         os.Exit(ERROR_COMPILE_REGEXP_FAIL)
     }
     barInfoTbs, err = regexp.Compile(`<input type="hidden" name="tbs" value="(.+?)"/>`)
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Compile Regexp Error: %v\n", err)
+        os.Exit(ERROR_COMPILE_REGEXP_FAIL)
+    }
+    barInfoFid2, err = regexp.Compile(`fid=([^&]+)`)
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Compile Regexp Error: %v\n", err)
+        os.Exit(ERROR_COMPILE_REGEXP_FAIL)
+    }
+    barInfoTbs2, err = regexp.Compile(`tbs=([^&]+)`)
     if err != nil {
         fmt.Fprintf(os.Stderr, "Compile Regexp Error: %v\n", err)
         os.Exit(ERROR_COMPILE_REGEXP_FAIL)
@@ -335,10 +345,20 @@ func getInfo(name string) (string, string, string) {
     _fid := barInfoFid.FindAllStringSubmatch(string(data), -1)
     if len(_fid) > 0 {
         fid = _fid[0][1]
+    } else {
+        _fid = barInfoFid2.FindAllStringSubmatch(string(data), -1)
+        if len(_fid) > 0 {
+            fid = _fid[0][1]
+        }
     }
     _tbs := barInfoTbs.FindAllStringSubmatch(string(data), -1)
     if len(_tbs) > 0 {
         tbs = _tbs[0][1]
+    } else {
+        _tbs = barInfoTbs2.FindAllStringSubmatch(string(data), -1)
+        if len(_tbs) > 0 {
+            tbs = _tbs[0][1]
+        }
     }
     return signed, fid, tbs
 }
